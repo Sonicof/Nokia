@@ -7,8 +7,10 @@ import pandas as pd
 import re
 from typing import Dict, List, Optional
 
-def get_eol_from_endoflife_date(software: str) -> Optional[List[Dict]]:
-    """Fetches detailed EOL data from endoflife.date API"""
+st.set_page_config(page_title="Software EOL & Analysis Tool", layout="wide")
+
+# --- Modular Source Fetchers ---
+def fetch_endoflife_date(software: str) -> Optional[List[Dict]]:
     url = f"https://endoflife.date/api/{software}.json"
     try:
         response = requests.get(url)
@@ -16,7 +18,6 @@ def get_eol_from_endoflife_date(software: str) -> Optional[List[Dict]]:
             data = response.json()
             if not data:
                 return None
-            
             versions_data = []
             for version in data:
                 version_info = {
@@ -28,25 +29,21 @@ def get_eol_from_endoflife_date(software: str) -> Optional[List[Dict]]:
                     "Support Status": "Active" if version.get("eol") == False else "End of Life" if version.get("eol") else "Unknown"
                 }
                 versions_data.append(version_info)
-            
             return versions_data
         return None
     except Exception as e:
-        st.error(f"Error fetching EOL data: {str(e)}")
-        return None
+        return f"Error: {str(e)}"
 
-def check_github_activity(software: str) -> Optional[List[Dict]]:
-    """Checks GitHub repository activity for detailed information."""
+def fetch_github_activity(software: str) -> Optional[List[Dict]]:
     github_api_url = f"https://api.github.com/search/repositories?q={software}&sort=updated&order=desc"
     headers = {"Accept": "application/vnd.github.v3+json"}
-    
     try:
         response = requests.get(github_api_url, headers=headers)
         if response.status_code == 200:
             repos = response.json()["items"]
             if repos:
                 repo_info = []
-                for repo in repos[:5]:  # Get top 5 most active repos
+                for repo in repos[:50]:
                     info = {
                         "Repository": repo["full_name"],
                         "Stars": repo["stargazers_count"],
@@ -57,14 +54,14 @@ def check_github_activity(software: str) -> Optional[List[Dict]]:
                         "Open Issues": repo["open_issues_count"]
                     }
                     repo_info.append(info)
+                # Add a metric to show the total number of repositories found
+                st.metric("Total Repositories Found", len(repos))
                 return repo_info
         return None
     except Exception as e:
-        st.error(f"Error checking GitHub: {str(e)}")
-        return None
+        return f"Error: {str(e)}"
 
-def get_npm_info(software: str) -> Optional[Dict]:
-    """Fetches package information from NPM registry."""
+def fetch_npm_info(software: str) -> Optional[Dict]:
     try:
         response = requests.get(f"https://registry.npmjs.org/{software}")
         if response.status_code == 200:
@@ -82,11 +79,9 @@ def get_npm_info(software: str) -> Optional[Dict]:
                 }
         return None
     except Exception as e:
-        st.error(f"Error fetching NPM data: {str(e)}")
-        return None
+        return f"Error: {str(e)}"
 
-def get_pypi_info(software: str) -> Optional[Dict]:
-    """Fetches package information from PyPI."""
+def fetch_pypi_info(software: str) -> Optional[Dict]:
     try:
         response = requests.get(f"https://pypi.org/pypi/{software}/json")
         if response.status_code == 200:
@@ -102,11 +97,69 @@ def get_pypi_info(software: str) -> Optional[Dict]:
             }
         return None
     except Exception as e:
-        st.error(f"Error fetching PyPI data: {str(e)}")
-        return None
+        return f"Error: {str(e)}"
 
-def get_security_advisories(software: str) -> Optional[List[Dict]]:
-    """Fetches security advisories from GitHub Security Advisories."""
+def fetch_dockerhub_info(software: str) -> Optional[Dict]:
+    """Stub: Fetches image info from Docker Hub."""
+    try:
+        response = requests.get(f"https://hub.docker.com/v2/repositories/library/{software}/tags?page_size=1")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('results'):
+                tag = data['results'][0]
+                return {
+                    "Name": software,
+                    "Tag": tag.get("name"),
+                    "Last Updated": tag.get("last_updated"),
+                    "Pulls": tag.get("pull_count", "N/A")
+                }
+        return None
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def fetch_rubygems_info(software: str) -> Optional[Dict]:
+    """Stub: Fetches gem info from RubyGems."""
+    try:
+        response = requests.get(f"https://rubygems.org/api/v1/gems/{software}.json")
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "Gem Name": data.get("name"),
+                "Latest Version": data.get("version"),
+                "Downloads": data.get("downloads"),
+                "Last Updated": data.get("version_created_at"),
+                "License": data.get("licenses", [])
+            }
+        return None
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def fetch_maven_info(software: str) -> Optional[Dict]:
+    """Stub: Fetches artifact info from Maven Central."""
+    try:
+        response = requests.get(f"https://search.maven.org/solrsearch/select?q={software}&rows=1&wt=json")
+        if response.status_code == 200:
+            data = response.json()
+            docs = data.get('response', {}).get('docs', [])
+            if docs:
+                doc = docs[0]
+                return {
+                    "Artifact": doc.get("id"),
+                    "Latest Version": doc.get("latestVersion"),
+                    "Last Updated": doc.get("timestamp"),
+                    "Group": doc.get("g"),
+                    "ArtifactId": doc.get("a")
+                }
+        return None
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def fetch_os_package_info(software: str) -> Optional[Dict]:
+    """Stub: Fetches info from OS package managers (e.g., Ubuntu, Alpine, etc.)."""
+    # This is a stub; real implementation would require scraping or using APIs.
+    return None
+
+def fetch_security_advisories(software: str) -> Optional[List[Dict]]:
     try:
         response = requests.get(f"https://api.github.com/search/repositories?q={software}+security+advisory&sort=updated&order=desc")
         if response.status_code == 200:
@@ -124,11 +177,9 @@ def get_security_advisories(software: str) -> Optional[List[Dict]]:
                 return advisories
         return None
     except Exception as e:
-        st.error(f"Error fetching security advisories: {str(e)}")
-        return None
+        return f"Error: {str(e)}"
 
-def get_community_stats(software: str) -> Dict:
-    """Gathers community statistics from various sources."""
+def fetch_community_stats(software: str) -> Dict:
     stats = {
         "Stack Overflow": {
             "Questions": 0,
@@ -139,8 +190,6 @@ def get_community_stats(software: str) -> Dict:
             "Stars": 0
         }
     }
-    
-    # Stack Overflow stats
     try:
         response = requests.get(f"https://api.stackexchange.com/2.3/tags/{software}/info?site=stackoverflow")
         if response.status_code == 200:
@@ -149,86 +198,94 @@ def get_community_stats(software: str) -> Dict:
                 stats["Stack Overflow"]["Questions"] = data["items"][0].get("count", 0)
                 stats["Stack Overflow"]["Tags"] = [tag["name"] for tag in data["items"][0].get("related_tags", [])]
     except Exception as e:
-        st.error(f"Error fetching Stack Overflow stats: {str(e)}")
-    
+        pass
     return stats
 
-# Streamlit UI
-st.set_page_config(page_title="Software EOL Checker", layout="wide")
-st.title("Software End-of-Life Information Checker")
+# --- Source Registry ---
+SOURCES = {
+    "EndOfLife.date": fetch_endoflife_date,
+    "GitHub": fetch_github_activity,
+    "NPM": fetch_npm_info,
+    "PyPI": fetch_pypi_info,
+    "Docker Hub": fetch_dockerhub_info,
+    "RubyGems": fetch_rubygems_info,
+    "Maven Central": fetch_maven_info,
+    "OS Package Manager": fetch_os_package_info,
+}
 
-# Sidebar for additional information
+# --- Streamlit UI ---
+st.title("Software End-of-Life & Ecosystem Analysis Tool")
+
 with st.sidebar:
     st.header("About")
     st.write("""
-    This tool provides comprehensive information about software end-of-life dates,
-    community activity, security status, and package information from multiple sources.
+    This tool provides broad, multi-source information about software end-of-life, version updates, community activity, and security status.
     """)
     st.markdown("### Data Sources")
-    st.markdown("""
-    - endoflife.date API
-    - GitHub API
-    - NPM Registry
-    - PyPI
-    - Stack Overflow
-    - Security Advisories
-    """)
+    for src in SOURCES:
+        st.markdown(f"- {src}")
+    st.markdown("- Stack Overflow")
+    st.markdown("- Security Advisories")
 
-# Main content
-software = st.text_input("Enter Software Name (e.g., python, nodejs, java):")
-if st.button("Check EOL Status"):
+software = st.text_input("Enter Software Name (e.g., python, nodejs, java):", key="software_input")
+if st.button("Analyze Software"):
     if software:
-        with st.spinner("Fetching comprehensive information..."):
-            # Create tabs for different types of information
-            tab1, tab2, tab3, tab4 = st.tabs(["Version Info", "Community Stats", "Package Info", "Security"])
-            
-            with tab1:
-                st.subheader("Version Information")
-                eol_data = get_eol_from_endoflife_date(software)
-                if eol_data:
-                    df_versions = pd.DataFrame(eol_data)
-                    st.dataframe(df_versions, use_container_width=True)
-                else:
-                    st.warning(f"No EOL information found for {software}")
-
-            with tab2:
+        with st.spinner("Fetching information from multiple sources..."):
+            tabs = st.tabs(list(SOURCES.keys()) + ["Community", "Security"])
+            # Per-source info
+            for i, (src, fetcher) in enumerate(SOURCES.items()):
+                with tabs[i]:
+                    st.subheader(f"{src} Info")
+                    try:
+                        result = fetcher(software)
+                        if isinstance(result, str) and result.startswith("Error"):
+                            st.error(result)
+                        elif result:
+                            if isinstance(result, list):
+                                st.dataframe(pd.DataFrame(result), use_container_width=True)
+                            elif isinstance(result, dict):
+                                for k, v in result.items():
+                                    st.write(f"**{k}:** {v}")
+                            else:
+                                st.write(result)
+                        else:
+                            st.info(f"No data found for {software} from {src}")
+                    except Exception as e:
+                        st.error(f"Error fetching from {src}: {str(e)}")
+            # Community tab
+            with tabs[-2]:
                 st.subheader("Community Statistics")
-                community_stats = get_community_stats(software)
+                community_stats = fetch_community_stats(software)
+                # Fetch GitHub repo count (improved)
+                github_repo_count = 0
+                github_error = None
+                try:
+                    github_api_url = f"https://api.github.com/search/repositories?q={software}+in:name"
+                    headers = {"Accept": "application/vnd.github.v3+json"}
+                    response = requests.get(github_api_url, headers=headers)
+                    if response.status_code == 200:
+                        github_repo_count = response.json().get("total_count", 0)
+                    elif response.status_code == 403:
+                        github_error = "GitHub API rate limit exceeded. Please try again later or use a personal access token."
+                    else:
+                        github_error = f"GitHub API error: {response.status_code}"
+                except Exception as e:
+                    github_error = f"GitHub API error: {str(e)}"
                 col1, col2 = st.columns(2)
                 with col1:
+                    st.metric("GitHub Repositories (in name)", github_repo_count)
+                    if github_error:
+                        st.warning(github_error)
                     st.metric("Stack Overflow Questions", community_stats["Stack Overflow"]["Questions"])
                     if community_stats["Stack Overflow"]["Tags"]:
                         st.write("Related Tags:", ", ".join(community_stats["Stack Overflow"]["Tags"]))
-                
-                github_data = check_github_activity(software)
-                if github_data:
-                    st.subheader("Active GitHub Repositories")
-                    df_github = pd.DataFrame(github_data)
-                    st.dataframe(df_github, use_container_width=True)
-                else:
-                    st.warning(f"No GitHub activity found for {software}")
-
-            with tab3:
-                st.subheader("Package Information")
-                col1, col2 = st.columns(2)
-                with col1:
-                    npm_info = get_npm_info(software)
-                    if npm_info:
-                        st.write("NPM Package Info:")
-                        for key, value in npm_info.items():
-                            st.write(f"**{key}:** {value}")
-                
-                with col2:
-                    pypi_info = get_pypi_info(software)
-                    if pypi_info:
-                        st.write("PyPI Package Info:")
-                        for key, value in pypi_info.items():
-                            st.write(f"**{key}:** {value}")
-
-            with tab4:
+            # Security tab
+            with tabs[-1]:
                 st.subheader("Security Information")
-                advisories = get_security_advisories(software)
-                if advisories:
+                advisories = fetch_security_advisories(software)
+                if isinstance(advisories, str) and advisories.startswith("Error"):
+                    st.error(advisories)
+                elif advisories:
                     for advisory in advisories:
                         st.markdown(f"### {advisory['Title']}")
                         st.write(advisory['Description'])
@@ -236,10 +293,8 @@ if st.button("Check EOL Status"):
                         st.markdown(f"[View Advisory]({advisory['URL']})")
                 else:
                     st.info("No recent security advisories found")
-
     else:
         st.error("Please enter a software name")
 
-# Footer
 st.markdown("---")
 st.markdown("Data sourced from multiple APIs and repositories")
